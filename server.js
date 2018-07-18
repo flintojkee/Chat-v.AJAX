@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const http = require('http').Server(app);
 const bodyParser = require('body-parser');
+const io = require('socket.io')(http);
 
 let messages = [];
 let users = [];
@@ -9,7 +10,6 @@ const maxMessages = 100;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
-
 app.use(express.static(__dirname + '/public'));
 
 app.get('/', function (req, res) {
@@ -24,37 +24,36 @@ app.get('/assets/main.css', function (req, res) {
     res.sendFile(__dirname + '/assets/main.css');
 });
 
-app.get('/messages', function (req, res) {
-    res.json(messages);
-});
+io.on('connection', function (socket) {
+    console.log("Client connected");
+    socket.on("chat message", function (msg) {
+        if (messages.length >= maxMessages) {
+            messages.shift();
+            messages.push(msg);
+        } else {
+            messages.push(msg);
+        }
+        io.emit('chat message', msg)
+    });
 
-app.post('/message', function (req, res) {
-    if (messages.length >= maxMessages) {
-        messages.shift();
-        messages.push(req.body);
-    } else {
-        messages.push(req.body);
-    }
-});
+    socket.on("user", function (user) {
+        users.push(user);
+    });
 
-app.post('/user', function (req, res) {
-        users.push(req.body);
-});
+    socket.on('typing', (userNickname)=>{
+        socket.broadcast.emit('typing', userNickname);
+    });
 
-app.delete('/user', function (req, res){
-    console.log(req.body);
-    let index = users.findIndex(user => (user.name===req.body.name)&&(user.nickName===req.body.nickName));
-    console.log(index);
-    if (index > -1) {
-        users.splice(index, 1);
-    }
-    console.log(users);
-});
+    socket.on('not typing', (userNickname)=>{
+        socket.broadcast.emit('not typing', userNickname);
+    });
+    socket.on('history', (messages)=>{
+        socket.emit('history', messages);
+    });
+    socket.emit('users', users);
 
-app.get('/users', function (req, res) {
-    res.json(users);
-});
 
+});
 
 http.listen(3000, function () {
     console.log('listening on port: 3000')
